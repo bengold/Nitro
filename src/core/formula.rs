@@ -179,7 +179,11 @@ impl FormulaParser {
     fn extract_class_name(&self, content: &str) -> NitroResult<String> {
         let re = regex::Regex::new(r"class\s+(\w+)\s*<\s*Formula").unwrap();
         if let Some(cap) = re.captures(content) {
-            Ok(cap[1].to_lowercase())
+            if let Some(name_match) = cap.get(1) {
+                Ok(name_match.as_str().to_lowercase())
+            } else {
+                Err(NitroError::FormulaParse("Could not extract formula class name".into()))
+            }
         } else {
             Err(NitroError::FormulaParse("Could not find formula class name".into()))
         }
@@ -187,18 +191,22 @@ impl FormulaParser {
 
     fn extract_desc(&self, content: &str) -> Option<String> {
         let re = regex::Regex::new(r#"desc\s+"([^"]+)""#).unwrap();
-        re.captures(content).map(|cap| cap[1].to_string())
+        re.captures(content).and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
     }
 
     fn extract_homepage(&self, content: &str) -> Option<String> {
         let re = regex::Regex::new(r#"homepage\s+"([^"]+)""#).unwrap();
-        re.captures(content).map(|cap| cap[1].to_string())
+        re.captures(content).and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
     }
 
     fn extract_url(&self, content: &str) -> NitroResult<String> {
         let re = regex::Regex::new(r#"url\s+"([^"]+)""#).unwrap();
         if let Some(cap) = re.captures(content) {
-            Ok(cap[1].to_string())
+            if let Some(url_match) = cap.get(1) {
+                Ok(url_match.as_str().to_string())
+            } else {
+                Err(NitroError::FormulaParse("Could not extract download URL".into()))
+            }
         } else {
             Err(NitroError::FormulaParse("Could not find download URL".into()))
         }
@@ -207,7 +215,11 @@ impl FormulaParser {
     fn extract_sha256(&self, content: &str) -> NitroResult<String> {
         let re = regex::Regex::new(r#"sha256\s+"([a-fA-F0-9]{64})""#).unwrap();
         if let Some(cap) = re.captures(content) {
-            Ok(cap[1].to_string())
+            if let Some(sha_match) = cap.get(1) {
+                Ok(sha_match.as_str().to_string())
+            } else {
+                Err(NitroError::FormulaParse("Could not extract SHA256 checksum".into()))
+            }
         } else {
             Err(NitroError::FormulaParse("Could not find SHA256 checksum".into()))
         }
@@ -217,7 +229,11 @@ impl FormulaParser {
         // Extract version from URL (simplified)
         let re = regex::Regex::new(r"[-_](\d+\.\d+(?:\.\d+)*)").unwrap();
         if let Some(cap) = re.captures(url) {
-            cap[1].to_string()
+            if let Some(ver_match) = cap.get(1) {
+                ver_match.as_str().to_string()
+            } else {
+                "unknown".to_string()
+            }
         } else {
             "unknown".to_string()
         }
@@ -228,15 +244,17 @@ impl FormulaParser {
         let re = regex::Regex::new(r#"depends_on\s+"([^"]+)"(?:\s*=>\s*:(\w+))?"#).unwrap();
         
         for cap in re.captures_iter(content) {
-            let name = cap[1].to_string();
-            let build_only = cap.get(2).map(|m| m.as_str() == "build").unwrap_or(false);
-            
-            deps.push(Dependency {
-                name,
-                version: None,
-                build_only,
-                optional: false,
-            });
+            if let Some(name_match) = cap.get(1) {
+                let name = name_match.as_str().to_string();
+                let build_only = cap.get(2).map(|m| m.as_str() == "build").unwrap_or(false);
+                
+                deps.push(Dependency {
+                    name,
+                    version: None,
+                    build_only,
+                    optional: false,
+                });
+            }
         }
         
         Ok(deps)
@@ -245,16 +263,31 @@ impl FormulaParser {
     fn extract_install_block(&self, content: &str) -> Option<String> {
         // Extract the install block (simplified - doesn't handle nested blocks properly)
         let re = regex::Regex::new(r"def install\s*\n((?:.*\n)*?)\s*end").unwrap();
-        re.captures(content).map(|cap| cap[1].trim().to_string())
+        re.captures(content).and_then(|cap| cap.get(1).map(|m| m.as_str().trim().to_string()))
     }
 
     fn extract_test_block(&self, content: &str) -> Option<String> {
         let re = regex::Regex::new(r"test do\s*\n((?:.*\n)*?)\s*end").unwrap();
-        re.captures(content).map(|cap| cap[1].trim().to_string())
+        re.captures(content).and_then(|cap| cap.get(1).map(|m| m.as_str().trim().to_string()))
     }
 
     fn extract_caveats(&self, content: &str) -> Option<String> {
-        let re = regex::Regex::new(r#"def caveats\s*(?:<<[-~]EOS|"([^"]*)")"#).unwrap();
-        re.captures(content).map(|cap| cap[1].to_string())
+        // Handle heredoc style caveats (most common in modern formulae)
+        let heredoc_re = regex::Regex::new(r"def caveats\s*\n\s*<<[-~]EOS\s*\n((?:.*\n)*?)\s*EOS").unwrap();
+        if let Some(cap) = heredoc_re.captures(content) {
+            if let Some(caveats_match) = cap.get(1) {
+                return Some(caveats_match.as_str().trim().to_string());
+            }
+        }
+        
+        // Handle string style caveats (less common)
+        let string_re = regex::Regex::new(r#"def caveats\s*\n?\s*"([^"]*)""#).unwrap();
+        if let Some(cap) = string_re.captures(content) {
+            if let Some(caveats_match) = cap.get(1) {
+                return Some(caveats_match.as_str().to_string());
+            }
+        }
+        
+        None
     }
 }

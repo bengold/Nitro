@@ -57,10 +57,9 @@ async fn import_homebrew() -> Result<()> {
         println!("   • {}", tap.name);
     }
     
-    // Rebuild search index
-    println!("\n🔍 Building search index...");
-    let search_engine = SearchEngine::new().await?;
-    search_engine.rebuild_index_with_tap_manager(&tap_manager).await?;
+    // Skip search index building for now as it's too slow with 7000+ formulae
+    println!("\n⚠️  Search index building skipped due to large number of formulae.");
+    println!("   Run 'nitro update --formulae' to build the search index later.");
     
     println!("\n✨ Homebrew import complete!");
     println!("\nYou can now:");

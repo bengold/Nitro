@@ -2,7 +2,23 @@
 
 A high-performance package manager written in Rust that leverages Homebrew formulae while providing significant performance improvements through parallel operations, intelligent caching, and pre-built binaries.
 
-## Building
+## Quick Installation
+
+### Option 1: Using Make (Fastest)
+```bash
+git clone https://github.com/yourusername/nitro.git
+cd nitro
+make install         # Installs to ~/.local/bin
+# OR
+make install-system  # Installs to /usr/local/bin (requires sudo)
+```
+
+### Option 2: One-liner (Coming Soon)
+```bash
+curl -fsSL https://raw.githubusercontent.com/yourusername/nitro/main/install.sh | bash
+```
+
+### Option 3: From Source
 
 ```bash
 # Build the project

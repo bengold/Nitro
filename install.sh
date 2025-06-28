@@ -1,157 +1,107 @@
 #!/bin/bash
-
 set -e
 
-# Nitro Package Manager Installation Script
-# This script installs Nitro alongside Homebrew for enhanced performance
+# Nitro Installation Script
+# Usage: curl -fsSL https://raw.githubusercontent.com/yourusername/nitro/main/install.sh | bash
 
 NITRO_VERSION="${NITRO_VERSION:-latest}"
 INSTALL_DIR="${NITRO_INSTALL_DIR:-$HOME/.nitro}"
-BIN_DIR="${NITRO_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="$INSTALL_DIR/bin"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Helper functions
-info() {
-    echo -e "${BLUE}==>${NC} $1"
-}
-
-success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
-
-error() {
-    echo -e "${RED}✗${NC} $1"
-    exit 1
-}
-
-# Check system requirements
-check_requirements() {
-    info "Checking system requirements..."
-    
-    # Check OS
-    if [[ "$OSTYPE" != "darwin"* ]] && [[ "$OSTYPE" != "linux"* ]]; then
-        error "Nitro currently only supports macOS and Linux"
-    fi
-    
-    # Check for curl or wget
-    if ! command -v curl &> /dev/null && ! command -v wget &> /dev/null; then
-        error "Either curl or wget is required for installation"
-    fi
-    
-    # Check for git (optional but recommended)
-    if ! command -v git &> /dev/null; then
-        warn "Git is not installed. Some features may not work properly."
-    fi
-    
-    success "System requirements met"
-}
-
-# Detect Homebrew installation
-detect_homebrew() {
-    info "Detecting Homebrew installation..."
-    
-    if command -v brew &> /dev/null; then
-        HOMEBREW_PREFIX=$(brew --prefix)
-        success "Homebrew found at: $HOMEBREW_PREFIX"
-        export HOMEBREW_PREFIX
-    else
-        warn "Homebrew not found. Nitro will work but with limited functionality."
-        warn "Install Homebrew from https://brew.sh for full features."
-    fi
-}
-
-# Download Nitro binary
-download_nitro() {
-    info "Downloading Nitro..."
-    
-    # Detect architecture
+# Detect OS and architecture
+detect_platform() {
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
     ARCH=$(uname -m)
-    case "$ARCH" in
-        x86_64)
-            ARCH="x86_64"
-            ;;
-        arm64|aarch64)
-            ARCH="aarch64"
-            ;;
-        *)
-            error "Unsupported architecture: $ARCH"
-            ;;
+    
+    case "$OS" in
+        darwin) OS="darwin" ;;
+        linux) OS="linux" ;;
+        *) echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
     esac
     
-    # Detect OS
-    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case "$ARCH" in
+        x86_64) ARCH="x86_64" ;;
+        aarch64|arm64) ARCH="aarch64" ;;
+        *) echo -e "${RED}Unsupported architecture: $ARCH${NC}"; exit 1 ;;
+    esac
     
-    # For now, since we don't have pre-built binaries, we'll build from source
-    # In the future, this would download pre-built binaries
-    
-    if command -v cargo &> /dev/null; then
-        info "Rust toolchain detected. Building from source..."
-        build_from_source
-    else
-        error "Pre-built binaries not yet available. Please install Rust to build from source."
-        echo "Visit https://rustup.rs to install Rust"
-    fi
+    PLATFORM="${OS}-${ARCH}"
 }
 
-# Build from source
-build_from_source() {
-    info "Building Nitro from source..."
+# Download pre-built binary
+download_binary() {
+    echo -e "${BLUE}Downloading Nitro ${NITRO_VERSION} for ${PLATFORM}...${NC}"
     
-    # Create temporary directory
-    TMP_DIR=$(mktemp -d)
-    cd "$TMP_DIR"
-    
-    # Clone repository
-    if command -v git &> /dev/null; then
-        git clone https://github.com/nitro-pm/nitro.git
-        cd nitro
+    if [ "$NITRO_VERSION" = "latest" ]; then
+        DOWNLOAD_URL="https://github.com/yourusername/nitro/releases/latest/download/nitro-${PLATFORM}.tar.gz"
     else
-        error "Git is required to build from source"
+        DOWNLOAD_URL="https://github.com/yourusername/nitro/releases/download/${NITRO_VERSION}/nitro-${PLATFORM}.tar.gz"
     fi
     
-    # Build release binary
+    # Create temp directory
+    TEMP_DIR=$(mktemp -d)
+    trap "rm -rf $TEMP_DIR" EXIT
+    
+    # Download and extract
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$DOWNLOAD_URL" | tar -xz -C "$TEMP_DIR"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$DOWNLOAD_URL" | tar -xz -C "$TEMP_DIR"
+    else
+        echo -e "${RED}Neither curl nor wget found. Please install one of them.${NC}"
+        exit 1
+    fi
+    
+    # Install binary
+    mkdir -p "$BIN_DIR"
+    mv "$TEMP_DIR/nitro" "$BIN_DIR/"
+    chmod +x "$BIN_DIR/nitro"
+}
+
+# Build from source (fallback)
+build_from_source() {
+    echo -e "${YELLOW}Pre-built binary not available. Building from source...${NC}"
+    
+    # Check for Rust
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo -e "${RED}Rust is required to build from source.${NC}"
+        echo "Install Rust with: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        exit 1
+    fi
+    
+    # Clone and build
+    TEMP_DIR=$(mktemp -d)
+    trap "rm -rf $TEMP_DIR" EXIT
+    
+    git clone https://github.com/yourusername/nitro.git "$TEMP_DIR"
+    cd "$TEMP_DIR"
+    
+    echo -e "${BLUE}Building Nitro (this may take a few minutes)...${NC}"
     cargo build --release
     
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR/bin"
-    
-    # Copy binary
-    cp target/release/nitro "$INSTALL_DIR/bin/"
-    chmod +x "$INSTALL_DIR/bin/nitro"
-    
-    # Clean up
-    cd /
-    rm -rf "$TMP_DIR"
-    
-    success "Nitro built and installed successfully"
+    # Install binary
+    mkdir -p "$BIN_DIR"
+    mv target/release/nitro "$BIN_DIR/"
 }
 
 # Setup shell integration
 setup_shell() {
-    info "Setting up shell integration..."
+    echo -e "${BLUE}Setting up shell integration...${NC}"
     
-    # Create bin directory if it doesn't exist
-    mkdir -p "$BIN_DIR"
-    
-    # Create symlink
-    ln -sf "$INSTALL_DIR/bin/nitro" "$BIN_DIR/nitro"
-    
-    # Detect shell and add to PATH
+    # Detect shell
     SHELL_NAME=$(basename "$SHELL")
     
     case "$SHELL_NAME" in
         bash)
             RC_FILE="$HOME/.bashrc"
+            [ -f "$HOME/.bash_profile" ] && RC_FILE="$HOME/.bash_profile"
             ;;
         zsh)
             RC_FILE="$HOME/.zshrc"
@@ -160,66 +110,52 @@ setup_shell() {
             RC_FILE="$HOME/.config/fish/config.fish"
             ;;
         *)
-            RC_FILE="$HOME/.profile"
+            echo -e "${YELLOW}Unknown shell: $SHELL_NAME${NC}"
+            echo "Please add $BIN_DIR to your PATH manually"
+            return
             ;;
     esac
     
-    # Add PATH export if not already present
-    if ! grep -q "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$RC_FILE" 2>/dev/null; then
+    # Add to PATH if not already there
+    if ! grep -q "nitro/bin" "$RC_FILE" 2>/dev/null; then
         echo "" >> "$RC_FILE"
-        echo "# Nitro Package Manager" >> "$RC_FILE"
-        echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
-        
-        # Add Homebrew compatibility
-        if [ -n "$HOMEBREW_PREFIX" ]; then
-            echo "export HOMEBREW_PREFIX=\"$HOMEBREW_PREFIX\"" >> "$RC_FILE"
+        echo "# Nitro package manager" >> "$RC_FILE"
+        if [ "$SHELL_NAME" = "fish" ]; then
+            echo "set -gx PATH $BIN_DIR \$PATH" >> "$RC_FILE"
+        else
+            echo "export PATH=\"$BIN_DIR:\$PATH\"" >> "$RC_FILE"
         fi
+        echo -e "${GREEN}Added Nitro to PATH in $RC_FILE${NC}"
     fi
-    
-    success "Shell integration configured"
-}
-
-# Post-installation setup
-post_install() {
-    info "Running post-installation setup..."
-    
-    # Import existing Homebrew taps if available
-    if [ -n "$HOMEBREW_PREFIX" ] && [ -d "$HOMEBREW_PREFIX/Homebrew/Library/Taps" ]; then
-        info "Importing Homebrew taps..."
-        "$INSTALL_DIR/bin/nitro" tap list &> /dev/null || true
-    fi
-    
-    success "Post-installation complete"
 }
 
 # Main installation
 main() {
-    echo "🚀 Nitro Package Manager Installer"
-    echo "=================================="
-    echo
+    echo -e "${BLUE}Installing Nitro Package Manager${NC}"
+    echo "=============================="
     
-    check_requirements
-    detect_homebrew
-    download_nitro
-    setup_shell
-    post_install
+    detect_platform
     
-    echo
-    success "Nitro installation complete!"
-    echo
-    echo "To get started:"
-    echo "  1. Reload your shell configuration:"
-    echo "     source $RC_FILE"
-    echo "  2. Verify installation:"
-    echo "     nitro --version"
-    echo "  3. See available commands:"
-    echo "     nitro --help"
-    echo
-    
-    if [ -z "$HOMEBREW_PREFIX" ]; then
-        echo "For full functionality, install Homebrew:"
-        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    # Try to download pre-built binary first
+    if ! download_binary 2>/dev/null; then
+        build_from_source
     fi
+    
+    setup_shell
+    
+    # Create initial config
+    "$BIN_DIR/nitro" --version >/dev/null 2>&1 || true
+    
+    echo ""
+    echo -e "${GREEN}✅ Nitro installed successfully!${NC}"
+    echo ""
+    echo "To get started:"
+    echo "  1. Reload your shell: source ~/.bashrc (or ~/.zshrc)"
+    echo "  2. Import Homebrew taps: nitro homebrew import"
+    echo "  3. Search for packages: nitro search <package>"
+    echo "  4. Install packages: nitro install <package>"
+    echo ""
+    echo "For more information: nitro --help"
 }
 
 # Run main installation

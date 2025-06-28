@@ -15,8 +15,7 @@ pub struct Package {
     pub installed_version: Option<String>,
     pub dependencies: Vec<String>,
     pub install_path: Option<PathBuf>,
-    pub size_bytes: Option<u64>,
-    pub installed_at: chrono::DateTime<chrono::Utc>,
+    pub size: Option<u64>,
 }
 
 pub struct PackageManager {
@@ -34,11 +33,7 @@ impl PackageManager {
         let db_path = config_dir.data_dir().join("packages.db");
         std::fs::create_dir_all(db_path.parent().unwrap())?;
         
-        let db = sled::Config::new()
-            .path(&db_path)
-            .mode(sled::Mode::HighThroughput)
-            .flush_every_ms(Some(1000))
-            .open()?;
+        let db = sled::open(&db_path)?;
         let formula_manager = super::formula::FormulaManager::new().await?;
         let installer = super::installer::Installer::new()?;
         let resolver = super::resolver::DependencyResolver::new();
@@ -51,13 +46,7 @@ impl PackageManager {
         })
     }
 
-    pub fn install<'a>(&'a self, package_name: &'a str, args: &'a InstallArgs) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move {
-            self.install_impl(package_name, args).await
-        })
-    }
-
-    async fn install_impl(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
+    pub async fn install(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
         // Get formula
         let formula = self.formula_manager.get_formula(package_name).await?;
         
@@ -65,20 +54,20 @@ impl PackageManager {
         if !args.force && self.is_installed(package_name)? {
             return Err(NitroError::Other(format!("{} is already installed", package_name)).into());
         }
-
+        
         // Resolve dependencies
         let deps = if args.skip_deps {
             vec![]
         } else {
-            self.resolver.resolve(&formula).await?
+            self.resolver.resolve(&formula, &self.formula_manager).await?
         };
 
         // Install dependencies first
-        if !args.only_deps {
-            for dep in &deps {
-                if !self.is_installed(&dep.name)? {
-                    self.install(&dep.name, args).await?;
-                }
+        for dep_formula in &deps {
+            if !self.is_installed(&dep_formula.name)? {
+                println!("Installing dependency: {}", dep_formula.name);
+                self.installer.install(dep_formula, args.build_from_source).await?;
+                self.mark_installed(dep_formula)?;
             }
         }
 
@@ -204,8 +193,7 @@ impl PackageManager {
             installed_version: Some(formula.version.clone()),
             dependencies: formula.dependencies.iter().map(|d| d.name.clone()).collect(),
             install_path: Some(self.installer.get_install_path(&formula.name)),
-            size_bytes: None, // TODO: Calculate installed size
-            installed_at: chrono::Utc::now(),
+            size: None, // TODO: Calculate installed size
         };
 
         self.db.insert(&formula.name, serde_json::to_vec(&package)?)?;
@@ -255,12 +243,5 @@ impl Default for InstallArgs {
             version: None,
             debug: false,
         }
-    }
-}
-
-impl Drop for PackageManager {
-    fn drop(&mut self) {
-        // Ensure the database is properly flushed before dropping
-        let _ = self.db.flush();
     }
 }

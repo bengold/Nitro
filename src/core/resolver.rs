@@ -1,21 +1,18 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use super::formula::{Formula, FormulaManager};
 use crate::core::{NitroError, NitroResult};
-use super::formula::Formula;
 
 pub struct DependencyResolver {
-    // Cache resolved dependencies to avoid re-computing
-    cache: HashMap<String, Vec<Formula>>,
+    // The resolver is currently stateless. A cache could be added here later.
 }
 
 impl DependencyResolver {
     pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-        }
+        Self {}
     }
 
-    pub async fn resolve(&self, formula: &Formula) -> NitroResult<Vec<Formula>> {
+    pub async fn resolve(&self, formula: &Formula, formula_manager: &FormulaManager) -> NitroResult<Vec<Formula>> {
         let mut resolved = Vec::new();
         let mut seen = HashSet::new();
         let mut queue = VecDeque::new();
@@ -40,7 +37,6 @@ impl DependencyResolver {
             seen.insert(dep.name.clone());
 
             // Get formula for dependency
-            let formula_manager = super::formula::FormulaManager::new().await?;
             let dep_formula = formula_manager.get_formula(&dep.name).await?;
 
             // Check for conflicts

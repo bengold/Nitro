@@ -55,7 +55,7 @@ impl SearchEngine {
 
         let reader = index
             .reader_builder()
-            .reload_policy(ReloadPolicy::Manual)
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()?;
 
         Ok(Self {
@@ -223,6 +223,7 @@ impl SearchEngine {
         tap_name: &'a str
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
+            let mut count = 0;
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
@@ -231,6 +232,7 @@ impl SearchEngine {
                     // Recursively index subdirectories
                     self.index_formulae_recursive(index_writer, formula_parser, &path, tap_name).await?;
                 } else if path.extension().and_then(|s| s.to_str()) == Some("rb") {
+                    // Skip parsing errors silently to avoid blocking on problematic formulae
                     if let Ok(formula) = formula_parser.parse_file(&path).await {
                         let name = path.file_stem()
                             .and_then(|s| s.to_str())
@@ -246,6 +248,12 @@ impl SearchEngine {
                         doc.add_text(self.path_field, path.to_string_lossy());
                         
                         index_writer.add_document(doc)?;
+                        count += 1;
+                        
+                        // Commit every 100 documents to avoid memory issues
+                        if count % 100 == 0 {
+                            index_writer.commit()?;
+                        }
                     }
                 }
             }

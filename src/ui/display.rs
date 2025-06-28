@@ -37,9 +37,11 @@ pub fn show_package_info(package: &Package) {
         println!("Installed to: {}", path.display());
     }
     
-    println!("Installed at: {}", package.installed_at.format("%Y-%m-%d %H:%M:%S"));
+    if package.installed {
+        println!("Status: Installed");
+    }
     
-    if let Some(size) = package.size_bytes {
+    if let Some(size) = package.size {
         println!("Size: {}", format_bytes(size));
     }
 }
@@ -63,7 +65,7 @@ pub fn show_package_list(packages: &[Package]) {
             println!("   {}", desc);
         }
         
-        if let Some(size) = package.size_bytes {
+        if let Some(size) = package.size {
             println!("   Size: {}", format_bytes(size));
         }
         println!();
@@ -86,18 +88,11 @@ pub fn show_tap_list(taps: &[Tap]) {
             println!("   Last updated: {}", updated.format("%Y-%m-%d %H:%M:%S"));
         }
         
-        // Count formulae in tap
+        // Count formulae in tap (recursively scan subdirectories)
         let formula_dir = tap.path.join("Formula");
         if formula_dir.exists() {
-            if let Ok(entries) = std::fs::read_dir(&formula_dir) {
-                let count = entries.filter(|e| {
-                    e.as_ref()
-                        .map(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("rb"))
-                        .unwrap_or(false)
-                }).count();
-                
-                println!("   Formulae: {}", count);
-            }
+            let count = count_formulae_recursive(&formula_dir);
+            println!("   Formulae: {}", count);
         }
         println!();
     }
@@ -217,4 +212,24 @@ pub fn show_formula_info(formula: &crate::core::formula::Formula, _args: &crate:
         println!("\n⚠️  Caveats:");
         println!("{}", caveats);
     }
+}
+
+fn count_formulae_recursive(dir: &std::path::Path) -> usize {
+    let mut count = 0;
+    
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_dir() {
+                    // Recursively count formulae in subdirectories
+                    count += count_formulae_recursive(&path);
+                } else if path.extension().and_then(|s| s.to_str()) == Some("rb") {
+                    count += 1;
+                }
+            }
+        }
+    }
+    
+    count
 }
