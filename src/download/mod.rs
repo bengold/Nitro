@@ -15,8 +15,9 @@ pub struct Downloader {
 impl Downloader {
     pub fn new() -> Result<Self> {
         let client = Client::builder()
-            .user_agent("Nitro Package Manager")
+            .user_agent("Nitro Package Manager/0.1.0")
             .timeout(std::time::Duration::from_secs(300))
+            .redirect(reqwest::redirect::Policy::limited(10))
             .build()?;
 
         Ok(Self { client })
@@ -32,11 +33,13 @@ impl Downloader {
             ).into());
         }
         
-        // Check content type - warn if it's HTML (likely an error page)
+        // Check content type - fail if it's HTML (likely an error page)
         if let Some(content_type) = response.headers().get("content-type") {
             if let Ok(ct) = content_type.to_str() {
                 if ct.contains("text/html") {
-                    eprintln!("Warning: Server returned HTML content instead of expected archive");
+                    return Err(NitroError::DownloadFailed(
+                        format!("Server returned HTML instead of archive. URL may be incorrect or require authentication: {}", url)
+                    ).into());
                 }
             }
         }
