@@ -115,4 +115,4 @@ jobs:
     - name: Create PR for Homebrew
       run: |
         echo "Homebrew formula updated with SHA256: ${{ env.SHA256 }}"
-        echo "TODO: Submit PR to homebrew/core or create your own tap"
+        echo "TODO: Submit PR to bengold/homebrew-nitro or create your own tap"

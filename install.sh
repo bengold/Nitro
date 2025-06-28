@@ -2,7 +2,7 @@
 set -e
 
 # Nitro Installation Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/yourusername/nitro/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/bengold/Nitro/main/install.sh | bash
 
 NITRO_VERSION="${NITRO_VERSION:-latest}"
 INSTALL_DIR="${NITRO_INSTALL_DIR:-$HOME/.nitro}"
@@ -40,9 +40,9 @@ download_binary() {
     echo -e "${BLUE}Downloading Nitro ${NITRO_VERSION} for ${PLATFORM}...${NC}"
     
     if [ "$NITRO_VERSION" = "latest" ]; then
-        DOWNLOAD_URL="https://github.com/yourusername/nitro/releases/latest/download/nitro-${PLATFORM}.tar.gz"
+        DOWNLOAD_URL="https://github.com/bengold/Nitro/releases/latest/download/nitro-${PLATFORM}.tar.gz"
     else
-        DOWNLOAD_URL="https://github.com/yourusername/nitro/releases/download/${NITRO_VERSION}/nitro-${PLATFORM}.tar.gz"
+        DOWNLOAD_URL="https://github.com/bengold/Nitro/releases/download/${NITRO_VERSION}/nitro-${PLATFORM}.tar.gz"
     fi
     
     # Create temp directory
@@ -80,7 +80,7 @@ build_from_source() {
     TEMP_DIR=$(mktemp -d)
     trap "rm -rf $TEMP_DIR" EXIT
     
-    git clone https://github.com/yourusername/nitro.git "$TEMP_DIR"
+    git clone https://github.com/bengold/Nitro.git "$TEMP_DIR"
     cd "$TEMP_DIR"
     
     echo -e "${BLUE}Building Nitro (this may take a few minutes)...${NC}"

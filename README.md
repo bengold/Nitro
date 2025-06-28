@@ -6,7 +6,7 @@ A high-performance package manager written in Rust that leverages Homebrew formu
 
 ### Option 1: Using Make (Fastest)
 ```bash
-git clone https://github.com/yourusername/nitro.git
+git clone https://github.com/bengold/Nitro.git
 cd nitro
 make install         # Installs to ~/.local/bin
 # OR
@@ -15,7 +15,7 @@ make install-system  # Installs to /usr/local/bin (requires sudo)
 
 ### Option 2: One-liner (Coming Soon)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/nitro/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bengold/Nitro/main/install.sh | bash
 ```
 
 ### Option 3: From Source

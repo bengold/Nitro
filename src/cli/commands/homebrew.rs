@@ -24,7 +24,6 @@ pub async fn execute(args: HomebrewArgs) -> Result<()> {
 
 async fn import_homebrew() -> Result<()> {
     use crate::core::tap::TapManager;
-    use crate::search::SearchEngine;
     
     println!("🔍 Detecting Homebrew installation...");
     

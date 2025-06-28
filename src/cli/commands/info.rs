@@ -41,7 +41,7 @@ pub async fn execute(args: InfoArgs) -> Result<()> {
             // If alias failed, try original name
             formula_manager.get_formula(&args.package).await?
         }
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     };
 
     if args.json {

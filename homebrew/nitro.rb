@@ -1,10 +1,10 @@
 class Nitro < Formula
   desc "Fast, modern package manager leveraging Homebrew formulae"
-  homepage "https://github.com/yourusername/nitro"
-  url "https://github.com/yourusername/nitro/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/bengold/Nitro"
+  url "https://github.com/bengold/Nitro/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256"
   license "MIT"
-  head "https://github.com/yourusername/nitro.git", branch: "main"
+  head "https://github.com/bengold/Nitro.git", branch: "main"
 
   depends_on "rust" => :build
 

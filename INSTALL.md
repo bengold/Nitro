@@ -13,7 +13,7 @@
 
 ```bash
 # Clone and install in under 3 minutes
-git clone https://github.com/yourusername/nitro.git && \
+git clone https://github.com/bengold/Nitro.git && \
 cd nitro && \
 make install
 ```
@@ -24,11 +24,11 @@ make install
 
 ```bash
 # Using Homebrew (coming soon)
-brew tap yourusername/nitro
+brew tap bengold/Nitro
 brew install nitro
 
 # OR using Make
-git clone https://github.com/yourusername/nitro.git
+git clone https://github.com/bengold/Nitro.git
 cd nitro
 make install-system  # Installs to /usr/local/bin
 ```
@@ -37,10 +37,10 @@ make install-system  # Installs to /usr/local/bin
 
 ```bash
 # One-liner (coming soon)
-curl -fsSL https://raw.githubusercontent.com/yourusername/nitro/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bengold/Nitro/main/install.sh | bash
 
 # OR using Make
-git clone https://github.com/yourusername/nitro.git
+git clone https://github.com/bengold/Nitro.git
 cd nitro
 make install  # Installs to ~/.local/bin
 ```
