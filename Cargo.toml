@@ -67,6 +67,9 @@ rayon = "1.10"
 # System information
 sysinfo = "0.32"
 
+# Date and time
+chrono = { version = "0.4", features = ["serde"] }
+
 [dev-dependencies]
 mockito = "1.5"
 proptest = "1.5"

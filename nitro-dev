@@ -1,0 +1,15 @@
+#!/bin/bash
+# Nitro development wrapper
+
+# Set the binary path
+NITRO_BIN="$(dirname "$0")/target/release/nitro"
+
+# Check if binary exists
+if [ ! -f "$NITRO_BIN" ]; then
+    echo "Error: Nitro binary not found at $NITRO_BIN"
+    echo "Run: cargo build --release"
+    exit 1
+fi
+
+# Run Nitro with all arguments
+exec "$NITRO_BIN" "$@"

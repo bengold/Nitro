@@ -27,10 +27,13 @@ pub async fn execute(args: UpdateArgs) -> Result<()> {
     let progress = ProgressReporter::new();
 
     if args.formulae {
-        progress.start_task("Updating formulae database");
+        println!("Updating formulae database...");
         let formula_manager = FormulaManager::new().await?;
         formula_manager.update_formulae().await?;
-        progress.complete_task("Formulae database updated");
+        
+        println!("Rebuilding search index...");
+        formula_manager.rebuild_search_index().await?;
+        println!("Formulae database updated");
     }
 
     if args.upgrade || !args.packages.is_empty() {

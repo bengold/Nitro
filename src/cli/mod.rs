@@ -41,4 +41,7 @@ pub enum Commands {
 
     /// Manage taps (formula repositories)
     Tap(commands::tap::TapArgs),
+
+    /// Homebrew compatibility commands
+    Homebrew(commands::homebrew::HomebrewArgs),
 }

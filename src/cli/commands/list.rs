@@ -27,11 +27,7 @@ pub async fn execute(args: ListArgs) -> Result<()> {
     let package_manager = PackageManager::new().await?;
     let packages = package_manager.list_installed(&args).await?;
 
-    if packages.is_empty() {
-        println!("No packages installed");
-    } else {
-        display::show_package_list(&packages, &args);
-    }
+    display::show_package_list(&packages);
 
     Ok(())
 }

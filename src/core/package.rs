@@ -15,7 +15,8 @@ pub struct Package {
     pub installed_version: Option<String>,
     pub dependencies: Vec<String>,
     pub install_path: Option<PathBuf>,
-    pub size: Option<u64>,
+    pub size_bytes: Option<u64>,
+    pub installed_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub struct PackageManager {
@@ -33,7 +34,11 @@ impl PackageManager {
         let db_path = config_dir.data_dir().join("packages.db");
         std::fs::create_dir_all(db_path.parent().unwrap())?;
         
-        let db = sled::open(&db_path)?;
+        let db = sled::Config::new()
+            .path(&db_path)
+            .mode(sled::Mode::HighThroughput)
+            .flush_every_ms(Some(1000))
+            .open()?;
         let formula_manager = super::formula::FormulaManager::new().await?;
         let installer = super::installer::Installer::new()?;
         let resolver = super::resolver::DependencyResolver::new();
@@ -46,7 +51,13 @@ impl PackageManager {
         })
     }
 
-    pub async fn install(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
+    pub fn install<'a>(&'a self, package_name: &'a str, args: &'a InstallArgs) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.install_impl(package_name, args).await
+        })
+    }
+
+    async fn install_impl(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
         // Get formula
         let formula = self.formula_manager.get_formula(package_name).await?;
         
@@ -108,7 +119,7 @@ impl PackageManager {
         let mut packages = Vec::new();
         
         for entry in self.db.iter() {
-            let (key, value) = entry?;
+            let (_key, value) = entry?;
             let package: Package = serde_json::from_slice(&value)?;
             
             if package.installed {
@@ -193,7 +204,8 @@ impl PackageManager {
             installed_version: Some(formula.version.clone()),
             dependencies: formula.dependencies.iter().map(|d| d.name.clone()).collect(),
             install_path: Some(self.installer.get_install_path(&formula.name)),
-            size: None, // TODO: Calculate installed size
+            size_bytes: None, // TODO: Calculate installed size
+            installed_at: chrono::Utc::now(),
         };
 
         self.db.insert(&formula.name, serde_json::to_vec(&package)?)?;
@@ -243,5 +255,12 @@ impl Default for InstallArgs {
             version: None,
             debug: false,
         }
+    }
+}
+
+impl Drop for PackageManager {
+    fn drop(&mut self) {
+        // Ensure the database is properly flushed before dropping
+        let _ = self.db.flush();
     }
 }

@@ -23,6 +23,9 @@ pub enum NitroError {
     #[error("Tap error: {0}")]
     TapError(String),
 
+    #[error("Search error: {0}")]
+    SearchError(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -34,6 +37,12 @@ pub enum NitroError {
 
     #[error("Database error: {0}")]
     Database(#[from] sled::Error),
+
+    #[error("Tantivy error: {0}")]
+    Tantivy(#[from] tantivy::TantivyError),
+
+    #[error("General error: {0}")]
+    General(#[from] anyhow::Error),
 
     #[error("Other error: {0}")]
     Other(String),

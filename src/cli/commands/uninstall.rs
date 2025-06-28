@@ -29,7 +29,7 @@ pub async fn execute(args: UninstallArgs) -> Result<()> {
         match package_manager.uninstall(package_name, &args).await {
             Ok(_) => progress.complete_package(package_name),
             Err(e) => {
-                progress.fail_package(package_name, &e);
+                progress.fail_package(package_name, &crate::core::NitroError::Other(e.to_string()));
                 if !args.force {
                     return Err(e);
                 }

@@ -45,6 +45,9 @@ async fn main() -> Result<()> {
         Commands::Tap(args) => {
             cli::commands::tap::execute(args).await?;
         }
+        Commands::Homebrew(args) => {
+            cli::commands::homebrew::execute(args).await?;
+        }
     }
 
     Ok(())

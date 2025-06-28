@@ -5,3 +5,4 @@ pub mod list;
 pub mod update;
 pub mod info;
 pub mod tap;
+pub mod homebrew;

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Override the installation prefix to use our test directory
+export NITRO_PREFIX="$NITRO_TEST_DIR"
+exec "$PWD/target/release/nitro" "$@"
