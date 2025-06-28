@@ -41,16 +41,24 @@ impl Downloader {
             }
         }
 
-        let total_size = response
-            .content_length()
-            .ok_or_else(|| NitroError::DownloadFailed("Unknown content length".into()))?;
+        let total_size = response.content_length().unwrap_or(0);
 
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")?
-                .progress_chars("#>-"),
-        );
+        let pb = if total_size > 0 {
+            let pb = ProgressBar::new(total_size);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")?
+                    .progress_chars("#>-"),
+            );
+            pb
+        } else {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.green} [{elapsed_precise}] {bytes} downloaded")?
+            );
+            pb
+        };
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = dest.parent() {
@@ -65,9 +73,12 @@ impl Downloader {
             let chunk = chunk?;
             file.write_all(&chunk).await?;
             
-            let new = std::cmp::min(downloaded + (chunk.len() as u64), total_size);
-            downloaded = new;
-            pb.set_position(new);
+            downloaded += chunk.len() as u64;
+            if total_size > 0 {
+                pb.set_position(std::cmp::min(downloaded, total_size));
+            } else {
+                pb.set_position(downloaded);
+            }
         }
 
         pb.finish_with_message("Download complete");

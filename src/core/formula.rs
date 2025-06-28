@@ -226,17 +226,23 @@ impl FormulaParser {
     }
 
     fn extract_version_from_url(&self, url: &str) -> String {
-        // Extract version from URL (simplified)
-        let re = regex::Regex::new(r"[-_](\d+\.\d+(?:\.\d+)*)").unwrap();
-        if let Some(cap) = re.captures(url) {
-            if let Some(ver_match) = cap.get(1) {
-                ver_match.as_str().to_string()
-            } else {
-                "unknown".to_string()
+        // Try multiple patterns to extract version
+        let patterns = [
+            r"[-_/]v?(\d+\.\d+(?:\.\d+)*)",  // Common patterns like -1.2.3 or /v1.2.3
+            r"/tags/v?(\d+\.\d+(?:\.\d+)*)",  // GitHub tags
+            r"download/v?(\d+\.\d+(?:\.\d+)*)", // GitHub releases
+        ];
+        
+        for pattern in &patterns {
+            let re = regex::Regex::new(pattern).unwrap();
+            if let Some(cap) = re.captures(url) {
+                if let Some(ver_match) = cap.get(1) {
+                    return ver_match.as_str().to_string();
+                }
             }
-        } else {
-            "unknown".to_string()
         }
+        
+        "unknown".to_string()
     }
 
     fn extract_dependencies(&self, content: &str) -> NitroResult<(Vec<Dependency>, Vec<Dependency>)> {
