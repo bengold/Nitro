@@ -1,0 +1,78 @@
+[package]
+name = "nitro"
+version = "0.1.0"
+edition = "2021"
+authors = ["Nitro Contributors"]
+description = "A high-performance package manager leveraging Homebrew formulae"
+license = "MIT"
+repository = "https://github.com/nitro-pm/nitro"
+
+[[bin]]
+name = "nitro"
+path = "src/main.rs"
+
+[dependencies]
+# CLI and async runtime
+clap = { version = "4.5", features = ["derive", "env", "string"] }
+tokio = { version = "1.40", features = ["full"] }
+
+# HTTP and networking
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+
+# Progress bars and UI
+indicatif = "0.17"
+console = "0.15"
+dialoguer = "0.11"
+
+# Search and database
+tantivy = "0.22"
+sled = "0.34"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# File system and paths
+directories = "5.0"
+tempfile = "3.13"
+walkdir = "2.5"
+
+# Checksums and verification
+sha2 = "0.10"
+hex = "0.4"
+
+# Compression
+flate2 = "1.0"
+tar = "0.4"
+zip = "2.2"
+
+# Ruby parsing for formulae
+# We'll use a custom parser approach
+regex = "1.11"
+nom = "7.1"
+
+# Concurrent operations
+futures = "0.3"
+rayon = "1.10"
+
+# System information
+sysinfo = "0.32"
+
+[dev-dependencies]
+mockito = "1.5"
+proptest = "1.5"
+criterion = "0.5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
