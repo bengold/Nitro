@@ -47,8 +47,31 @@ impl PackageManager {
     }
 
     pub async fn install(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
+        // Try common aliases first
+        let resolved_name = match package_name {
+            "python" => "python@3.12",
+            "python3" => "python@3.12",
+            "ruby" => "ruby@3.3",
+            "node" => "node@22",
+            "nodejs" => "node@22",
+            "postgresql" => "postgresql@17",
+            "postgres" => "postgresql@17",
+            "mysql" => "mysql@9.1",
+            "java" => "openjdk@23",
+            "go" => "go@1.23",
+            "golang" => "go@1.23",
+            _ => package_name,
+        };
+        
         // Get formula
-        let formula = self.formula_manager.get_formula(package_name).await?;
+        let formula = match self.formula_manager.get_formula(resolved_name).await {
+            Ok(f) => f,
+            Err(_) if resolved_name != package_name => {
+                // If alias failed, try original name
+                self.formula_manager.get_formula(package_name).await?
+            }
+            Err(e) => return Err(e.into()),
+        };
         
         // Check if already installed
         if !args.force && self.is_installed(package_name)? {

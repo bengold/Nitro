@@ -152,7 +152,7 @@ impl FormulaParser {
         let url = self.extract_url(content)?;
         let sha256 = self.extract_sha256(content)?;
         let version = self.extract_version_from_url(&url);
-        let dependencies = self.extract_dependencies(content)?;
+        let (dependencies, build_dependencies) = self.extract_dependencies(content)?;
         
         Ok(Formula {
             name,
@@ -166,7 +166,7 @@ impl FormulaParser {
                 mirror: None,
             }],
             dependencies,
-            build_dependencies: vec![],
+            build_dependencies,
             optional_dependencies: vec![],
             conflicts: vec![],
             install_script: self.extract_install_block(content),
@@ -239,8 +239,9 @@ impl FormulaParser {
         }
     }
 
-    fn extract_dependencies(&self, content: &str) -> NitroResult<Vec<Dependency>> {
+    fn extract_dependencies(&self, content: &str) -> NitroResult<(Vec<Dependency>, Vec<Dependency>)> {
         let mut deps = Vec::new();
+        let mut build_deps = Vec::new();
         let re = regex::Regex::new(r#"depends_on\s+"([^"]+)"(?:\s*=>\s*:(\w+))?"#).unwrap();
         
         for cap in re.captures_iter(content) {
@@ -248,16 +249,22 @@ impl FormulaParser {
                 let name = name_match.as_str().to_string();
                 let build_only = cap.get(2).map(|m| m.as_str() == "build").unwrap_or(false);
                 
-                deps.push(Dependency {
+                let dep = Dependency {
                     name,
                     version: None,
                     build_only,
                     optional: false,
-                });
+                };
+                
+                if build_only {
+                    build_deps.push(dep);
+                } else {
+                    deps.push(dep);
+                }
             }
         }
         
-        Ok(deps)
+        Ok((deps, build_deps))
     }
 
     fn extract_install_block(&self, content: &str) -> Option<String> {

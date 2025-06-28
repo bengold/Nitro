@@ -249,11 +249,33 @@ impl Installer {
         use flate2::read::GzDecoder;
         use tar::Archive;
 
+        // Check if file exists and has content
+        let metadata = std::fs::metadata(tarball)?;
+        if metadata.len() == 0 {
+            return Err(NitroError::Other("Downloaded file is empty".into()).into());
+        }
+
         let file = std::fs::File::open(tarball)?;
-        let decoder = GzDecoder::new(file);
+        
+        // Try to decompress - this will fail if it's not a gzip file
+        let decoder = match GzDecoder::new(file).header() {
+            Some(_) => {
+                // Re-open file since we consumed it checking the header
+                let file = std::fs::File::open(tarball)?;
+                GzDecoder::new(file)
+            }
+            None => {
+                return Err(NitroError::Other(
+                    "File is not a valid gzip archive. The download may have failed or returned an error page.".into()
+                ).into());
+            }
+        };
+        
         let mut archive = Archive::new(decoder);
         
-        archive.unpack(destination)?;
+        archive.unpack(destination).map_err(|e| {
+            anyhow::Error::from(NitroError::Other(format!("Failed to extract archive: {}. The file may be corrupted or not a valid tar.gz archive.", e)))
+        })?;
         Ok(())
     }
 

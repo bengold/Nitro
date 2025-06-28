@@ -23,12 +23,22 @@ impl Downloader {
     }
 
     pub async fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
+        println!("Downloading: {}", url);
         let response = self.client.get(url).send().await?;
         
         if !response.status().is_success() {
             return Err(NitroError::DownloadFailed(
                 format!("HTTP {}: {}", response.status(), url)
             ).into());
+        }
+        
+        // Check content type - warn if it's HTML (likely an error page)
+        if let Some(content_type) = response.headers().get("content-type") {
+            if let Ok(ct) = content_type.to_str() {
+                if ct.contains("text/html") {
+                    eprintln!("Warning: Server returned HTML content instead of expected archive");
+                }
+            }
         }
 
         let total_size = response
