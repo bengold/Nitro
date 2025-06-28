@@ -74,8 +74,8 @@ impl PackageManager {
         };
         
         // Check if already installed
-        if !args.force && self.is_installed(package_name)? {
-            return Err(NitroError::Other(format!("{} is already installed", package_name)).into());
+        if !args.force && self.is_installed(&formula.name)? {
+            return Err(NitroError::Other(format!("{} is already installed", formula.name)).into());
         }
         
         // Resolve dependencies

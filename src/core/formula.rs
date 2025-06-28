@@ -228,9 +228,9 @@ impl FormulaParser {
     fn extract_version_from_url(&self, url: &str) -> String {
         // Try multiple patterns to extract version
         let patterns = [
-            r"[-_/]v?(\d+\.\d+(?:\.\d+)*)",  // Common patterns like -1.2.3 or /v1.2.3
             r"/tags/v?(\d+\.\d+(?:\.\d+)*)",  // GitHub tags
             r"download/v?(\d+\.\d+(?:\.\d+)*)", // GitHub releases
+            r"[-_/]v?(\d+\.\d+(?:\.\d+)*)",  // Common patterns like -1.2.3 or /v1.2.3
         ];
         
         for pattern in &patterns {
