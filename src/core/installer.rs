@@ -37,9 +37,12 @@ impl Installer {
 
     pub async fn install(&self, formula: &Formula, build_from_source: bool) -> NitroResult<()> {
         // Try binary installation first unless building from source
-        if !build_from_source {
-            if let Ok(_) = self.install_binary(formula).await {
-                return Ok(());
+        if !build_from_source && !formula.binary_packages.is_empty() {
+            match self.install_binary(formula).await {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("Binary installation failed: {}. Falling back to source installation.", e);
+                }
             }
         }
 
@@ -105,7 +108,10 @@ impl Installer {
         
         // Download source
         let temp_dir = tempfile::tempdir()?;
-        let download_path = temp_dir.path().join("source.tar.gz");
+        
+        // Determine file extension from URL
+        let file_name = source.url.split('/').last().unwrap_or("source.tar.gz");
+        let download_path = temp_dir.path().join(file_name);
         
         self.downloader.download_file(&source.url, &download_path).await?;
 
@@ -246,8 +252,9 @@ impl Installer {
     }
 
     fn extract_tarball(&self, tarball: &Path, destination: &Path) -> Result<()> {
-        use flate2::read::GzDecoder;
         use tar::Archive;
+        use flate2::read::GzDecoder;
+        use xz2::read::XzDecoder;
 
         // Check if file exists and has content
         let metadata = std::fs::metadata(tarball)?;
@@ -255,27 +262,66 @@ impl Installer {
             return Err(NitroError::Other("Downloaded file is empty".into()).into());
         }
 
+        // Determine compression type by extension
+        let extension = tarball.extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        
+        eprintln!("DEBUG: Extracting {} with extension: {}", tarball.display(), extension);
+
         let file = std::fs::File::open(tarball)?;
         
-        // Try to decompress - this will fail if it's not a gzip file
-        let decoder = match GzDecoder::new(file).header() {
-            Some(_) => {
-                // Re-open file since we consumed it checking the header
+        match extension {
+            "gz" => {
+                let decoder = GzDecoder::new(file);
+                let mut archive = Archive::new(decoder);
+                archive.unpack(destination).map_err(|e| {
+                    anyhow::Error::from(NitroError::Other(format!("Failed to extract tar.gz archive: {}", e)))
+                })?;
+            }
+            "xz" => {
+                let decoder = XzDecoder::new(file);
+                let mut archive = Archive::new(decoder);
+                archive.unpack(destination).map_err(|e| {
+                    anyhow::Error::from(NitroError::Other(format!("Failed to extract tar.xz archive: {}", e)))
+                })?;
+            }
+            "bz2" => {
+                use bzip2::read::BzDecoder;
+                let decoder = BzDecoder::new(file);
+                let mut archive = Archive::new(decoder);
+                archive.unpack(destination).map_err(|e| {
+                    anyhow::Error::from(NitroError::Other(format!("Failed to extract tar.bz2 archive: {}", e)))
+                })?;
+            }
+            _ => {
+                // Try to detect by reading file header
+                let mut file = std::fs::File::open(tarball)?;
+                let mut header = [0u8; 6];
+                use std::io::Read;
+                file.read_exact(&mut header)?;
+                
+                // Reset file
                 let file = std::fs::File::open(tarball)?;
-                GzDecoder::new(file)
+                
+                if header[0..2] == [0x1f, 0x8b] {
+                    // gzip
+                    let decoder = GzDecoder::new(file);
+                    let mut archive = Archive::new(decoder);
+                    archive.unpack(destination)?;
+                } else if header[0..6] == [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00] {
+                    // xz
+                    let decoder = XzDecoder::new(file);
+                    let mut archive = Archive::new(decoder);
+                    archive.unpack(destination)?;
+                } else {
+                    return Err(NitroError::Other(
+                        "Unknown archive format. Supported formats: .tar.gz, .tar.xz, .tar.bz2".into()
+                    ).into());
+                }
             }
-            None => {
-                return Err(NitroError::Other(
-                    "File is not a valid gzip archive. The download may have failed or returned an error page.".into()
-                ).into());
-            }
-        };
+        }
         
-        let mut archive = Archive::new(decoder);
-        
-        archive.unpack(destination).map_err(|e| {
-            anyhow::Error::from(NitroError::Other(format!("Failed to extract archive: {}. The file may be corrupted or not a valid tar.gz archive.", e)))
-        })?;
         Ok(())
     }
 
