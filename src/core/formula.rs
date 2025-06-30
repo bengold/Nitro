@@ -72,12 +72,16 @@ impl FormulaManager {
     pub async fn get_formula(&self, name: &str) -> NitroResult<Formula> {
         // Check cache first
         if let Ok(formula) = self.load_from_cache(name) {
+            eprintln!("DEBUG: Loaded formula {} from cache with {} sources", formula.name, formula.sources.len());
             return Ok(formula);
         }
+        eprintln!("DEBUG: Formula {} not in cache, will parse", name);
 
         // Find formula in taps
         let formula_path = self.tap_manager.find_formula(name).await?;
+        eprintln!("DEBUG: Found formula at: {}", formula_path.display());
         let formula = self.parser.parse_file(&formula_path).await?;
+        eprintln!("DEBUG: Parsed formula {} with {} sources", formula.name, formula.sources.len());
         
         // Cache the parsed formula
         self.save_to_cache(&formula)?;
@@ -119,6 +123,7 @@ impl FormulaManager {
     }
 
     fn save_to_cache(&self, formula: &Formula) -> Result<()> {
+        eprintln!("DEBUG: Saving formula {} to cache with {} sources", formula.name, formula.sources.len());
         let cache_path = self.cache_dir.join(format!("{}.json", formula.name));
         let data = serde_json::to_string_pretty(formula)?;
         std::fs::write(cache_path, data)?;
@@ -136,9 +141,11 @@ impl FormulaParser {
     }
 
     pub async fn parse_file(&self, path: &Path) -> NitroResult<Formula> {
+        eprintln!("DEBUG: Parsing formula file: {}", path.display());
         let content = std::fs::read_to_string(path)
             .map_err(|e| NitroError::FormulaParse(format!("Failed to read formula file: {}", e)))?;
         
+        eprintln!("DEBUG: Formula content length: {} chars", content.len());
         self.parse_content(&content)
     }
 
@@ -147,12 +154,21 @@ impl FormulaParser {
         // For now, we'll use regex to extract basic information
         
         let name = self.extract_class_name(content)?;
+        eprintln!("DEBUG: Parsing formula: {}", name);
         let desc = self.extract_desc(content);
         let homepage = self.extract_homepage(content);
-        let url = self.extract_url(content)?;
-        let sha256 = self.extract_sha256(content)?;
-        let version = self.extract_version_from_url(&url);
+        let url = self.extract_url(content).ok();
+        eprintln!("DEBUG: Extracted URL: {:?}", url);
+        let sha256 = self.extract_sha256(content).ok();
+        eprintln!("DEBUG: Extracted SHA256: {:?}", sha256);
+        let version = if let Some(ref u) = url {
+            self.extract_version_from_url(u)
+        } else {
+            self.extract_version_from_content(content).unwrap_or_else(|| "unknown".to_string())
+        };
         let (dependencies, build_dependencies) = self.extract_dependencies(content)?;
+        
+        let binary_packages = self.extract_bottles(content, &name, &version)?;
         
         Ok(Formula {
             name,
@@ -160,11 +176,26 @@ impl FormulaParser {
             description: desc,
             homepage,
             license: None, // TODO: Extract license
-            sources: vec![Source {
-                url,
-                sha256,
-                mirror: None,
-            }],
+            sources: if let Some(url) = url {
+                // For git URLs, we don't need SHA256
+                if url.ends_with(".git") {
+                    vec![Source {
+                        url,
+                        sha256: String::new(), // Empty SHA256 for git URLs
+                        mirror: None,
+                    }]
+                } else if let Some(sha256) = sha256 {
+                    vec![Source {
+                        url,
+                        sha256,
+                        mirror: None,
+                    }]
+                } else {
+                    vec![] // No valid source
+                }
+            } else {
+                vec![] // No sources for formulas that build from git or other methods
+            },
             dependencies,
             build_dependencies,
             optional_dependencies: vec![],
@@ -172,7 +203,7 @@ impl FormulaParser {
             install_script: self.extract_install_block(content),
             test_script: self.extract_test_block(content),
             caveats: self.extract_caveats(content),
-            binary_packages: vec![], // Will be populated from CDN
+            binary_packages,
         })
     }
 
@@ -180,7 +211,26 @@ impl FormulaParser {
         let re = regex::Regex::new(r"class\s+(\w+)\s*<\s*Formula").unwrap();
         if let Some(cap) = re.captures(content) {
             if let Some(name_match) = cap.get(1) {
-                Ok(name_match.as_str().to_lowercase())
+                // Convert class name format to package name format
+                // e.g., PythonAT312 -> python@3.12
+                let class_name = name_match.as_str();
+                let name = if let Some(at_pos) = class_name.find("AT") {
+                    // Handle versioned formulae like PythonAT312
+                    let (base, version_part) = class_name.split_at(at_pos);
+                    let version = &version_part[2..]; // Skip "AT"
+                    
+                    // Insert dots in version number (312 -> 3.12)
+                    let formatted_version = if version.len() >= 2 {
+                        format!("{}.{}", &version[0..1], &version[1..])
+                    } else {
+                        version.to_string()
+                    };
+                    
+                    format!("{}@{}", base.to_lowercase(), formatted_version)
+                } else {
+                    class_name.to_lowercase()
+                };
+                Ok(name)
             } else {
                 Err(NitroError::FormulaParse("Could not extract formula class name".into()))
             }
@@ -200,29 +250,47 @@ impl FormulaParser {
     }
 
     fn extract_url(&self, content: &str) -> NitroResult<String> {
-        let re = regex::Regex::new(r#"url\s+"([^"]+)""#).unwrap();
+        // Try standard URL format (with optional trailing comma for multiline entries)
+        let re = regex::Regex::new(r#"url\s+"([^"]+)",?"#).unwrap();
         if let Some(cap) = re.captures(content) {
             if let Some(url_match) = cap.get(1) {
-                Ok(url_match.as_str().to_string())
-            } else {
-                Err(NitroError::FormulaParse("Could not extract download URL".into()))
+                let url = url_match.as_str();
+                eprintln!("DEBUG: Extracted URL: {}", url);
+                // Check if it's a git URL with additional parameters
+                if url.ends_with(".git") {
+                    // For git URLs, we need to extract tag/revision info
+                    if let Some(tag_match) = regex::Regex::new(r#"tag:\s*"([^"]+)""#).unwrap().captures(content) {
+                        if let Some(tag) = tag_match.get(1) {
+                            eprintln!("DEBUG: Found git URL with tag: {}", tag.as_str());
+                        }
+                    }
+                }
+                return Ok(url.to_string());
             }
-        } else {
-            Err(NitroError::FormulaParse("Could not find download URL".into()))
         }
+        
+        Err(NitroError::FormulaParse("Could not find download URL".into()))
     }
 
     fn extract_sha256(&self, content: &str) -> NitroResult<String> {
-        let re = regex::Regex::new(r#"sha256\s+"([a-fA-F0-9]{64})""#).unwrap();
-        if let Some(cap) = re.captures(content) {
-            if let Some(sha_match) = cap.get(1) {
-                Ok(sha_match.as_str().to_string())
-            } else {
-                Err(NitroError::FormulaParse("Could not extract SHA256 checksum".into()))
+        // Try multiple SHA256 patterns
+        let patterns = [
+            r#"sha256\s+"([a-fA-F0-9]{64})""#,  // Standard format
+            r#"sha256\s+["']([a-fA-F0-9]{64})["']"#,  // With single quotes
+            r#"sha256\s+:?\s*["']([a-fA-F0-9]{64})["']"#,  // With symbol notation
+        ];
+        
+        for pattern in &patterns {
+            let re = regex::Regex::new(pattern).unwrap();
+            if let Some(cap) = re.captures(content) {
+                if let Some(sha_match) = cap.get(1) {
+                    return Ok(sha_match.as_str().to_string());
+                }
             }
-        } else {
-            Err(NitroError::FormulaParse("Could not find SHA256 checksum".into()))
         }
+        
+        eprintln!("DEBUG: Could not find SHA256 in formula content");
+        Err(NitroError::FormulaParse("Could not find SHA256 checksum".into()))
     }
 
     fn extract_version_from_url(&self, url: &str) -> String {
@@ -243,6 +311,26 @@ impl FormulaParser {
         }
         
         "unknown".to_string()
+    }
+
+    fn extract_version_from_content(&self, content: &str) -> Option<String> {
+        // Try to extract version from version directive
+        let re = regex::Regex::new(r#"version\s+"([^"]+)""#).unwrap();
+        if let Some(cap) = re.captures(content) {
+            if let Some(ver_match) = cap.get(1) {
+                return Some(ver_match.as_str().to_string());
+            }
+        }
+        
+        // Try to extract from revision or tag
+        let re = regex::Regex::new(r#"revision\s+"([^"]+)""#).unwrap();
+        if let Some(cap) = re.captures(content) {
+            if let Some(ver_match) = cap.get(1) {
+                return Some(ver_match.as_str().to_string());
+            }
+        }
+        
+        None
     }
 
     fn extract_dependencies(&self, content: &str) -> NitroResult<(Vec<Dependency>, Vec<Dependency>)> {
@@ -302,5 +390,80 @@ impl FormulaParser {
         }
         
         None
+    }
+
+    fn extract_bottles(&self, content: &str, formula_name: &str, _version: &str) -> NitroResult<Vec<BinaryPackage>> {
+        let mut bottles = Vec::new();
+        
+        // Find the bottle block
+        let bottle_re = regex::Regex::new(r"bottle do\s*\n((?:.*\n)*?)\s*end").unwrap();
+        if let Some(bottle_cap) = bottle_re.captures(content) {
+            if let Some(bottle_block) = bottle_cap.get(1) {
+                let bottle_content = bottle_block.as_str();
+                eprintln!("DEBUG: Found bottle block with {} chars", bottle_content.len());
+                
+                // Extract SHA256 entries
+                // Pattern: sha256 cellar: :any_skip_relocation, platform: "sha256"
+                let sha_re = regex::Regex::new(r#"sha256(?:\s+cellar:\s*:\w+,)?\s+(\w+):\s*"([a-fA-F0-9]{64})""#).unwrap();
+                
+                for cap in sha_re.captures_iter(bottle_content) {
+                    if let (Some(platform_match), Some(sha_match)) = (cap.get(1), cap.get(2)) {
+                        let platform_str = platform_match.as_str();
+                        let sha256 = sha_match.as_str().to_string();
+                        
+                        // Map Homebrew platform names to our platform/arch
+                        let (platform, arch) = match platform_str {
+                            "arm64_sequoia" | "arm64_sonoma" | "arm64_ventura" | "arm64_monterey" => ("darwin", "aarch64"),
+                            "sequoia" | "sonoma" | "ventura" | "monterey" | "big_sur" => ("darwin", "x86_64"),
+                            "x86_64_linux" => ("linux", "x86_64"),
+                            "aarch64_linux" => ("linux", "aarch64"),
+                            _ => continue, // Skip unknown platforms
+                        };
+                        
+                        // Construct bottle URL
+                        // Homebrew bottles are actually stored at a different location
+                        // The ghcr.io URLs need special handling, so we'll use the direct download URL
+                        let os_name = match platform_str {
+                            "arm64_sequoia" => "arm64_sequoia",
+                            "arm64_sonoma" => "arm64_sonoma", 
+                            "arm64_ventura" => "arm64_ventura",
+                            "arm64_monterey" => "arm64_monterey",
+                            "sequoia" => "sequoia",
+                            "sonoma" => "sonoma",
+                            "ventura" => "ventura", 
+                            "monterey" => "monterey",
+                            "big_sur" => "big_sur",
+                            "x86_64_linux" => "x86_64_linux",
+                            _ => platform_str,
+                        };
+                        
+                        // Use the direct GitHub Packages download URL format
+                        // Format: https://ghcr.io/v2/homebrew/core/FORMULA/blobs/sha256:SHA256
+                        // But we need to use the bottle filename format instead
+                        let _bottle_filename = format!("{}-{}.{}.bottle.tar.gz", 
+                            formula_name, _version, os_name);
+                        
+                        // Store the ghcr.io URL - proper authentication will be needed for download
+                        let url = format!(
+                            "https://ghcr.io/v2/homebrew/core/{}/blobs/sha256:{}",
+                            formula_name.replace("@", "/"),
+                            sha256
+                        );
+                        
+                        bottles.push(BinaryPackage {
+                            platform: platform.to_string(),
+                            arch: arch.to_string(),
+                            url,
+                            sha256,
+                        });
+                        
+                        eprintln!("DEBUG: Found bottle for {}/{}: {}", platform, arch, platform_str);
+                    }
+                }
+            }
+        }
+        
+        eprintln!("DEBUG: Extracted {} bottles for {}", bottles.len(), formula_name);
+        Ok(bottles)
     }
 }

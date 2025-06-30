@@ -36,8 +36,36 @@ impl DependencyResolver {
             }
             seen.insert(dep.name.clone());
 
-            // Get formula for dependency
-            let dep_formula = formula_manager.get_formula(&dep.name).await?;
+            // Get formula for dependency, handling special name mappings
+            let dep_formula = match formula_manager.get_formula(&dep.name).await {
+                Ok(f) => f,
+                Err(_) => {
+                    // Try common dependency name variations
+                    let variations = vec![
+                        dep.name.replace("@", "at"),  // openssl@3 -> opensslat3
+                        dep.name.replace("-", ""),     // ca-certificates -> cacertificates
+                        dep.name.replace("_", "-"),    // some_package -> some-package
+                        dep.name.replace("-", "_"),    // some-package -> some_package
+                    ];
+                    
+                    let mut found = None;
+                    for variant in variations {
+                        if let Ok(f) = formula_manager.get_formula(&variant).await {
+                            eprintln!("Resolved dependency '{}' to '{}'", dep.name, variant);
+                            found = Some(f);
+                            break;
+                        }
+                    }
+                    
+                    match found {
+                        Some(f) => f,
+                        None => {
+                            eprintln!("Warning: Could not resolve dependency '{}', skipping", dep.name);
+                            continue;
+                        }
+                    }
+                }
+            };
 
             // Check for conflicts
             self.check_conflicts(&dep_formula, &resolved)?;

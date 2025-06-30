@@ -47,31 +47,8 @@ impl PackageManager {
     }
 
     pub async fn install(&self, package_name: &str, args: &InstallArgs) -> Result<()> {
-        // Try common aliases first
-        let resolved_name = match package_name {
-            "python" => "python@3.12",
-            "python3" => "python@3.12",
-            "ruby" => "ruby@3.3",
-            "node" => "node@22",
-            "nodejs" => "node@22",
-            "postgresql" => "postgresql@17",
-            "postgres" => "postgresql@17",
-            "mysql" => "mysql@9.1",
-            "java" => "openjdk@23",
-            "go" => "go@1.23",
-            "golang" => "go@1.23",
-            _ => package_name,
-        };
-        
-        // Get formula
-        let formula = match self.formula_manager.get_formula(resolved_name).await {
-            Ok(f) => f,
-            Err(_) if resolved_name != package_name => {
-                // If alias failed, try original name
-                self.formula_manager.get_formula(package_name).await?
-            }
-            Err(e) => return Err(e.into()),
-        };
+        // Try to resolve the package name intelligently
+        let formula = self.resolve_package_formula(package_name).await?;
         
         // Check if already installed
         if !args.force && self.is_installed(&formula.name)? {
@@ -96,6 +73,10 @@ impl PackageManager {
 
         // Install the package
         if !args.only_deps {
+            eprintln!("DEBUG: Installing {} with {} sources", formula.name, formula.sources.len());
+            if !formula.sources.is_empty() {
+                eprintln!("DEBUG: First source URL: {}", formula.sources[0].url);
+            }
             self.installer.install(&formula, args.build_from_source).await?;
             self.mark_installed(&formula)?;
         }
@@ -241,6 +222,121 @@ impl PackageManager {
         }
 
         Ok(dependents)
+    }
+
+    async fn resolve_package_formula(&self, package_name: &str) -> Result<super::formula::Formula> {
+        eprintln!("DEBUG: Resolving package formula for: {}", package_name);
+        
+        // Try common aliases first
+        let common_aliases = [
+            ("python", "python@3.13"),
+            ("python3", "python@3.13"),
+            ("python2", "python@2.7"),
+            ("ruby", "ruby@3.3"),
+            ("node", "node@22"),
+            ("nodejs", "node@22"),
+            ("npm", "node@22"),  // npm comes with node
+            ("postgresql", "postgresql@17"),
+            ("postgres", "postgresql@17"),
+            ("pg", "postgresql@17"),
+            ("mysql", "mysql@9.1"),
+            ("mariadb", "mariadb@11.6"),
+            ("java", "openjdk@23"),
+            ("jdk", "openjdk@23"),
+            ("openjdk", "openjdk@23"),
+            ("go", "go@1.23"),
+            ("golang", "go@1.23"),
+            ("rust", "rust"),
+            ("cargo", "rust"),  // cargo comes with rust
+            ("pip", "python@3.13"),  // pip comes with python
+            ("pip3", "python@3.13"),
+            ("docker", "docker"),
+            ("docker-compose", "docker-compose"),
+            ("git", "git"),
+            ("vim", "vim"),
+            ("nvim", "neovim"),
+            ("emacs", "emacs"),
+            ("zsh", "zsh"),
+            ("bash", "bash"),
+            ("fish", "fish"),
+            ("tmux", "tmux"),
+            ("screen", "screen"),
+            ("wget", "wget"),
+            ("curl", "curl"),
+            ("htop", "htop"),
+            ("make", "make"),
+            ("cmake", "cmake"),
+            ("gcc", "gcc"),
+            ("g++", "gcc"),
+            ("clang", "llvm"),
+            ("redis", "redis"),
+            ("mongodb", "mongodb-community"),
+            ("mongo", "mongodb-community"),
+            ("nginx", "nginx"),
+            ("apache", "httpd"),
+            ("php", "php@8.4"),
+            ("composer", "composer"),
+            ("terraform", "terraform"),
+            ("ansible", "ansible"),
+            ("kubectl", "kubernetes-cli"),
+            ("k8s", "kubernetes-cli"),
+            ("aws", "awscli"),
+            ("gcloud", "google-cloud-sdk"),
+            ("az", "azure-cli"),
+            ("helm", "helm"),
+        ];
+        
+        // Check if it's a known alias
+        for (alias, actual) in &common_aliases {
+            if package_name.eq_ignore_ascii_case(alias) {
+                if let Ok(formula) = self.formula_manager.get_formula(actual).await {
+                    println!("Resolved '{}' to '{}'", package_name, actual);
+                    return Ok(formula);
+                }
+            }
+        }
+        
+        // Try exact match first
+        eprintln!("DEBUG: Trying exact match for: {}", package_name);
+        if let Ok(formula) = self.formula_manager.get_formula(package_name).await {
+            eprintln!("DEBUG: Found exact match, sources count: {}", formula.sources.len());
+            return Ok(formula);
+        }
+        eprintln!("DEBUG: No exact match found");
+        
+        // If exact match fails, try searching for similar packages
+        use crate::search::SearchEngine;
+        use crate::cli::commands::search::SearchArgs;
+        let search_engine = SearchEngine::new().await?;
+        let search_args = SearchArgs {
+            query: package_name.to_string(),
+            description: true,
+            fuzzy: true,
+            limit: 10,
+        };
+        let results = search_engine.search(package_name, &search_args).await?;
+        
+        if !results.is_empty() {
+            // Find the best match
+            let best_match = results.iter()
+                .find(|r| r.name.eq_ignore_ascii_case(package_name))
+                .or_else(|| results.iter().find(|r| r.name.starts_with(package_name)))
+                .or_else(|| results.iter().find(|r| r.name.contains(package_name)))
+                .unwrap_or(&results[0]);
+            
+            if let Ok(formula) = self.formula_manager.get_formula(&best_match.name).await {
+                if best_match.name != package_name {
+                    println!("No exact match for '{}', using '{}' instead", package_name, best_match.name);
+                    println!("Description: {}", best_match.description.as_deref().unwrap_or("No description"));
+                }
+                return Ok(formula);
+            }
+        }
+        
+        Err(NitroError::PackageNotFound(format!(
+            "Could not find package '{}'. Try 'nitro search {}' to find similar packages.",
+            package_name, package_name
+        )).into())
     }
 }
 

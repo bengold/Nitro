@@ -143,8 +143,11 @@ impl TapManager {
     pub async fn find_formula(&self, name: &str) -> NitroResult<PathBuf> {
         // Search for formula in all taps
         for tap in self.list_taps().await? {
+            // For formulas with @ (like python@3.12), we need to replace @ with at in the filename
+            let file_name = name.replace('@', "at");
+            
             // Check direct path first (legacy layout)
-            let formula_path = tap.path.join("Formula").join(format!("{}.rb", name));
+            let formula_path = tap.path.join("Formula").join(format!("{}.rb", file_name));
             if formula_path.exists() {
                 return Ok(formula_path);
             }
@@ -152,13 +155,13 @@ impl TapManager {
             // Check alphabetical subdirectories (modern layout)
             let formula_dir = tap.path.join("Formula");
             if formula_dir.exists() {
-                if let Ok(formula_path) = self.find_formula_recursive(&formula_dir, name) {
+                if let Ok(formula_path) = self.find_formula_recursive(&formula_dir, &file_name) {
                     return Ok(formula_path);
                 }
             }
             
             // Also check HomebrewFormula directory (some taps use this)
-            let alt_path = tap.path.join("HomebrewFormula").join(format!("{}.rb", name));
+            let alt_path = tap.path.join("HomebrewFormula").join(format!("{}.rb", file_name));
             if alt_path.exists() {
                 return Ok(alt_path);
             }
